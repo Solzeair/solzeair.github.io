@@ -70,4 +70,4 @@ def publish_note(note_filename):
 # 测试代码：手动运行这个脚本时，修改这里的笔记名来测试
 if __name__ == "__main__":
     # 请把下面的名字换成你 Obsidian 里真实存在的一篇测试笔记的名字
-    publish_note("测试文章.md")
+    publish_note("test.md")
