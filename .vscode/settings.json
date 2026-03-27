@@ -1,0 +1,13 @@
+{
+    // 将所有文件的默认编码设置为 UTF-8
+    "files.encoding": "utf8",
+    
+    // 让 VS Code 自动猜测文件编码（如果你有以前的非 UTF-8 文件，这能防止打开时直接乱码）
+    "files.autoGuessEncoding": true,
+    
+    // (可选推荐) 在文件末尾自动插入一个空行，这是 Web 开发和 Git 提交的最佳实践
+    "files.insertFinalNewline": true,
+
+    // 强制所有文件使用 LF (Linux/Mac) 风格的换行符
+    "files.eol": "\n"
+}

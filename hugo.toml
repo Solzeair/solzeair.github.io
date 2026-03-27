@@ -1,0 +1,19 @@
+baseURL = "https://Solzeair.github.io/" # 你的GitHub用户名
+languageCode = "zh-cn"
+title = "hugo-github搭建博客笔记" # 这里的名字你可以随便改，比如 "XXX的学术笔记"
+theme = "PaperMod"
+
+# 启用代码高亮和基础的 Markdown 扩展
+[markup]
+  [markup.highlight]
+    codeFences = true
+    guessSyntax = true
+    lineNos = true          # 给 C++/Qt 等底层代码块显示行号
+    style = "monokai"       # 经典的极客代码高亮配色
+  [markup.goldmark.renderer]
+    unsafe = true           # 允许在 Markdown 中混编少量 HTML（对学术排版居中很有用）
+
+[params]
+  defaultTheme = "auto"     # 自动跟随系统切换深色/浅色模式
+  ShowToc = true            # 文章自动生成目录，这对于你以后的长篇文献综述是必备的
+  math = true               # 全局开启数学公式渲染开关
