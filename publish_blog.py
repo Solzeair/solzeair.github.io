@@ -66,7 +66,9 @@ def publish_note(note_filename):
                 dest_img = os.path.join(HUGO_IMG_DIR, img_name)
                 shutil.copy2(src_img, dest_img)
                 # 记录 Hugo 访问路径
-                hugo_img_url = f"{HUGO_IMG_URL_PREFIX}{img_name}"
+                # 使用 urllib.parse.quote 将文件名中的空格和中文转码（如空格变成 %20）
+                safe_img_name = urllib.parse.quote(img_name)
+                hugo_img_url = f"{HUGO_IMG_URL_PREFIX}{safe_img_name}"
                 copied_imgs[clean_path] = hugo_img_url
                 img_count += 1
                 print(f"  ✅ 成功搬运图片：{img_name}")
