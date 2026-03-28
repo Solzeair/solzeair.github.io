@@ -1,0 +1,8 @@
+/* 强制让第一篇文章和后续文章保持一样的卡片外观，并完美适配深浅色模式 */
+.first-entry {
+    background: var(--entry) !important;
+    border-radius: var(--radius) !important;
+    padding: var(--gap) !important;
+    margin-bottom: var(--gap) !important;
+    min-height: auto !important;
+}
