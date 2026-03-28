@@ -29,91 +29,132 @@ def publish_note(note_filename):
         return
 
     print(f"🚀 开始处理笔记：{note_filename} ...")
+    print(f"   源文件：{src_md}")
+    print(f"   目标文件：{dest_md}")
 
     with open(src_md, 'r', encoding='utf-8') as f:
         content = f.read()
+    
+    print(f"\n📄 原始内容预览：")
+    print(f"   {content[:200]}...")
 
     # 同时匹配标准 Markdown 图片和 Obsidian 双链图片
-    # 正则优化：匹配带/不带路径的双链图片，且捕获图片名
     md_img_pattern = r'!\[.*?\]\((.*?)\)'
-    wiki_img_pattern = r'!\[\[(.*?)(?:\|.*?)?\]\]'  # 兼容 ![[]] 里带 | 标题的情况
+    wiki_img_pattern = r'!\[\[(.*?)(?:\|.*?)?\]\]'
     
     md_images = re.findall(md_img_pattern, content)
     wiki_images = re.findall(wiki_img_pattern, content)
     
+    print(f"\n🔍 发现图片：")
+    print(f"   Markdown 格式图片: {len(md_images)} 个")
+    print(f"   Obsidian 双链图片: {len(wiki_images)} 个")
+    
     all_images = md_images + wiki_images
     img_count = 0
 
-    # 第一步：搬运图片文件，并记录已成功搬运的图片名
+    # 第一步：搬运图片文件
     copied_imgs = {}  # 键：原图片路径，值：Hugo 访问路径
+    
     for img_path in all_images:
+        print(f"\n--- 处理图片: {img_path} ---")
+        
         # 清理路径：处理 URL 编码、去掉标题、取纯路径
         clean_path = urllib.parse.unquote(img_path.split('|')[0].strip())
         img_name = os.path.basename(clean_path)
         
-        # 尝试在图片目录和根目录中寻找图片
+        print(f"   clean_path: {clean_path}")
+        print(f"   img_name: {img_name}")
+        
+        # 尝试在多个位置寻找图片
         possible_src_imgs = [
-            os.path.join(OBSIDIAN_IMG_DIR, img_name),          # images/ 目录
-            os.path.join(OBSIDIAN_IMG_DIR, clean_path),       # 带相对路径的情况
-            os.path.join(OBSIDIAN_NOTE_DIR, img_name)         # 外层目录
+            os.path.join(OBSIDIAN_IMG_DIR, img_name),          # images/ 目录下直接找
+            os.path.join(OBSIDIAN_IMG_DIR, clean_path),        # 带相对路径的情况
+            os.path.join(OBSIDIAN_NOTE_DIR, clean_path),       # 笔记目录下带路径
+            os.path.join(OBSIDIAN_NOTE_DIR, img_name)          # 笔记目录下直接找
         ]
         
         img_found = False
-        for src_img in possible_src_imgs:
+        for i, src_img in enumerate(possible_src_imgs):
+            # 规范化路径（处理斜杠方向等问题）
+            src_img = os.path.normpath(src_img)
+            print(f"   尝试路径 [{i+1}]: {src_img}")
+            print(f"      存在? {os.path.exists(src_img)}")
+            
             if os.path.exists(src_img):
                 # 确保 Hugo 图片目录存在
                 os.makedirs(HUGO_IMG_DIR, exist_ok=True)
                 dest_img = os.path.join(HUGO_IMG_DIR, img_name)
+                
+                print(f"   ✅ 找到图片！复制到: {dest_img}")
+                
                 shutil.copy2(src_img, dest_img)
+                
+                # 验证复制是否成功
+                if os.path.exists(dest_img):
+                    print(f"   ✅ 复制成功！文件大小: {os.path.getsize(dest_img)} bytes")
+                else:
+                    print(f"   ❌ 复制失败！目标文件不存在")
+                    continue
+                
                 # 记录 Hugo 访问路径
-                # 使用 urllib.parse.quote 将文件名中的空格和中文转码（如空格变成 %20）
                 safe_img_name = urllib.parse.quote(img_name)
                 hugo_img_url = f"{HUGO_IMG_URL_PREFIX}{safe_img_name}"
                 copied_imgs[clean_path] = hugo_img_url
                 img_count += 1
-                print(f"  ✅ 成功搬运图片：{img_name}")
+                print(f"   📍 Hugo URL: {hugo_img_url}")
                 img_found = True
                 break
         
         if not img_found:
-             print(f"  ⚠️ 警告：在本地找不到图片实体文件：{img_name}")
+            print(f"   ⚠️ 警告：在本地找不到图片实体文件！")
 
-    # 第二步：替换笔记中的图片路径（核心修复点）
+    # 第二步：替换笔记中的图片路径
+    print(f"\n📝 开始替换图片路径...")
+    
     # 替换 Obsidian 双链图片 ![[]] 为 Markdown 图片格式
     def replace_wiki_img(match):
-        img_path = match.group(1).split('|')[0].strip()  # 去掉 | 后的标题
+        img_path = match.group(1).split('|')[0].strip()
         clean_path = urllib.parse.unquote(img_path)
-        # 如果图片已搬运，返回替换后的 Markdown 格式；否则保留原格式
         if clean_path in copied_imgs:
-            return f"![{os.path.basename(clean_path)}]({copied_imgs[clean_path]})"
+            new_url = copied_imgs[clean_path]
+            print(f"   替换: ![[{img_path}]] -> ![]({new_url})")
+            return f"![{os.path.basename(clean_path)}]({new_url})"
         else:
-            return match.group(0)  # 未找到图片，保留原内容
+            print(f"   ⚠️ 未找到映射，保留原样: {match.group(0)}")
+            return match.group(0)
     
-    # 替换 Obsidian 双链图片
     content = re.sub(wiki_img_pattern, replace_wiki_img, content)
     
-    # 可选：替换标准 Markdown 图片的本地路径为 Hugo 路径（如果需要）
+    # 替换标准 Markdown 图片的本地路径
     def replace_md_img(match):
         img_path = match.group(1)
         clean_path = urllib.parse.unquote(img_path)
         if clean_path in copied_imgs:
-            return f"![{os.path.basename(clean_path)}]({copied_imgs[clean_path]})"
+            new_url = copied_imgs[clean_path]
+            print(f"   替换: ![]({img_path}) -> ![]({new_url})")
+            return f"![{os.path.basename(clean_path)}]({new_url})"
         else:
             return match.group(0)
     
     content = re.sub(md_img_pattern, replace_md_img, content)
 
-    # 第三步：写入替换后的笔记内容到 Hugo 目录
+    # 第三步：写入替换后的笔记内容
+    print(f"\n💾 写入目标文件: {dest_md}")
     with open(dest_md, 'w', encoding='utf-8') as f:
         f.write(content)
-    print(f"✅ 笔记已搬运至 E 盘！(共包含 {img_count} 张图片，已替换路径)")
+    
+    print(f"\n📄 转换后内容预览：")
+    print(f"   {content[:300]}...")
+    
+    print(f"\n✅ 笔记已搬运至 E 盘！(共包含 {img_count} 张图片，已替换路径)")
 
     # 第四步：推送至 GitHub
-    print("☁️ 正在将代码推送到 GitHub...")
+    print("\n☁️ 正在将代码推送到 GitHub...")
     try:
         os.chdir(HUGO_ROOT)
         subprocess.run(["git", "add", "."], check=True)
-        subprocess.run(["git", "commit", "-m", f"Auto-publish: {note_filename}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["git", "commit", "-m", f"Auto-publish: {note_filename}"], 
+                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         subprocess.run(["git", "push"], check=True)
         print("🎉 自动发布成功！请去 GitHub Pages 检查网页。")
     except subprocess.CalledProcessError as e:
@@ -121,5 +162,4 @@ def publish_note(note_filename):
         print("💡 提示：既然开启了 TUN 模式，请确保 Mihomo 处于 'Rule' 模式，并且节点处于可用状态。")
 
 if __name__ == "__main__":
-    # 请把名字换成你那篇带图片的测试笔记
     publish_note("test.md")
