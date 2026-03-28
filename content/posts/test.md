@@ -1,2 +1,2 @@
 fafafafa
-![test01.png](/images/test01.png)
+![test01.png](/images/test/test01.png)
