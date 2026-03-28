@@ -3,6 +3,7 @@ import shutil
 import re
 import subprocess
 import urllib.parse
+import datetime  # 新增：用于获取系统时间
 
 # ================= 配置区 =================
 # 你的 Obsidian 源文件路径
@@ -32,7 +33,7 @@ def publish_note(note_filename):
     print(f"   源文件：{src_md}")
     print(f"   目标文件：{dest_md}")
 
-    # 获取文章名（去掉 .md 后缀），用于创建图片子文件夹
+    # 获取文章名（去掉 .md 后缀），用于创建图片子文件夹和生成标题
     article_name = os.path.splitext(note_filename)[0]
     article_img_dir = os.path.join(HUGO_IMG_DIR, article_name)
     article_img_url_prefix = f"{HUGO_IMG_URL_PREFIX}{article_name}/"
@@ -41,13 +42,12 @@ def publish_note(note_filename):
     with open(src_md, 'r', encoding='utf-8') as f:
         content = f.read()
 
-    # 同时匹配标准 Markdown 图片和 Obsidian 双链图片
+    # ====== 图像处理部分 (保持你优秀的逻辑不变) ======
     md_img_pattern = r'!\[.*?\]\((.*?)\)'
     wiki_img_pattern = r'!\[\[(.*?)(?:\|.*?)?\]\]'
     
     md_images = re.findall(md_img_pattern, content)
     wiki_images = re.findall(wiki_img_pattern, content)
-    
     all_images = md_images + wiki_images
     img_count = 0
 
@@ -55,16 +55,11 @@ def publish_note(note_filename):
     print(f"   Markdown 格式图片: {len(md_images)} 个")
     print(f"   Obsidian 双链图片: {len(wiki_images)} 个")
 
-    # 第一步：搬运图片文件，并记录已成功搬运的图片名
-    copied_imgs = {}  # 键：原图片路径，值：Hugo 访问路径
-    
+    copied_imgs = {}
     for img_path in all_images:
         clean_path = urllib.parse.unquote(img_path.split('|')[0].strip())
         img_name = os.path.basename(clean_path)
         
-        print(f"\n--- 处理图片: {img_name} ---")
-        
-        # 尝试在图片目录和根目录中寻找图片
         possible_src_imgs = [
             os.path.join(OBSIDIAN_IMG_DIR, img_name),
             os.path.join(OBSIDIAN_IMG_DIR, clean_path),
@@ -74,67 +69,85 @@ def publish_note(note_filename):
         
         img_found = False
         for i, src_img in enumerate(possible_src_imgs, 1):
-            print(f"   尝试路径 [{i}]: {src_img}")
             if os.path.exists(src_img):
-                # 创建文章专属的图片目录
                 os.makedirs(article_img_dir, exist_ok=True)
                 dest_img = os.path.join(article_img_dir, img_name)
                 
-                # 检查目标文件是否已存在
-                if os.path.exists(dest_img):
-                    print(f"   ⚠️ 图片已存在，跳过复制: {img_name}")
-                else:
+                if not os.path.exists(dest_img):
                     shutil.copy2(src_img, dest_img)
-                    print(f"   ✅ 复制成功！文件大小: {os.path.getsize(dest_img)} bytes")
                 
-                # 记录 Hugo 访问路径（使用文章专属路径）
                 safe_img_name = urllib.parse.quote(img_name)
                 hugo_img_url = f"{article_img_url_prefix}{safe_img_name}"
                 copied_imgs[clean_path] = hugo_img_url
                 img_count += 1
-                print(f"   📍 Hugo URL: {hugo_img_url}")
                 img_found = True
                 break
         
-        if not img_found:
-            print(f"   ❌ 警告：找不到图片文件: {img_name}")
-
-    # 第二步：替换笔记中的图片路径
-    print(f"\n📝 开始替换图片路径...")
-    
-    # 替换 Obsidian 双链图片 ![[]] 为 Markdown 图片格式
     def replace_wiki_img(match):
         img_path = match.group(1).split('|')[0].strip()
         clean_path = urllib.parse.unquote(img_path)
         if clean_path in copied_imgs:
             new_path = copied_imgs[clean_path]
-            print(f"   替换: ![[{img_path}]] -> ![]({new_path})")
             return f"![{os.path.basename(clean_path)}]({new_path})"
-        else:
-            return match.group(0)
+        return match.group(0)
     
     content = re.sub(wiki_img_pattern, replace_wiki_img, content)
     
-    # 替换标准 Markdown 图片的本地路径
     def replace_md_img(match):
         img_path = match.group(1)
         clean_path = urllib.parse.unquote(img_path)
         if clean_path in copied_imgs:
             new_path = copied_imgs[clean_path]
-            print(f"   替换: ![]({img_path}) -> ![]({new_path})")
             return f"![{os.path.basename(clean_path)}]({new_path})"
-        else:
-            return match.group(0)
+        return match.group(0)
     
     content = re.sub(md_img_pattern, replace_md_img, content)
 
-    # 第三步：写入替换后的笔记内容到 Hugo 目录
+
+    # ====== 新增：智能处理 Front Matter ======
+    print(f"\n⚙️ 检查并补全 Front Matter 元数据...")
+    # 获取当前 ISO 格式的时间，带时区 (Hugo 完美支持)
+    current_time = datetime.datetime.now().astimezone().isoformat('T', 'seconds')
+    
+    # 匹配开头是否有 --- 包裹的区域
+    fm_pattern = r'^---\s*\n(.*?)\n---\s*\n'
+    match = re.search(fm_pattern, content, flags=re.DOTALL)
+
+    if match:
+        print("   ✅ 检测到现有 Front Matter，正在检查缺失字段...")
+        fm_content = match.group(1)
+        fm_lines = fm_content.split('\n')
+        
+        # 检查是否缺失关键字段
+        has_title = any(line.strip().startswith('title:') for line in fm_lines)
+        has_date = any(line.strip().startswith('date:') for line in fm_lines)
+        has_draft = any(line.strip().startswith('draft:') for line in fm_lines)
+        
+        new_fm_lines = fm_lines.copy()
+        if not has_title:
+            new_fm_lines.append(f'title: "{article_name}"')
+            print("   ➕ 自动补充字段: title")
+        if not has_date:
+            new_fm_lines.append(f'date: {current_time}')
+            print("   ➕ 自动补充字段: date")
+        if not has_draft:
+            new_fm_lines.append(f'draft: false')
+            print("   ➕ 自动补充字段: draft")
+            
+        # 重新拼接替换
+        new_fm_text = "---\n" + "\n".join(new_fm_lines) + "\n---\n"
+        content = re.sub(fm_pattern, new_fm_text, content, count=1, flags=re.DOTALL)
+    else:
+        print("   ⚠️ 未检测到 Front Matter，正在自动生成...")
+        new_fm_text = f"---\ntitle: \"{article_name}\"\ndate: {current_time}\ndraft: false\n---\n"
+        content = new_fm_text + content
+
+
+    # ====== 写入并推送到 GitHub ======
     with open(dest_md, 'w', encoding='utf-8') as f:
         f.write(content)
     print(f"\n💾 写入目标文件: {dest_md}")
-    print(f"✅ 笔记已搬运至 E 盘！(共包含 {img_count} 张图片，已替换路径)")
 
-    # 第四步：推送至 GitHub
     print("\n☁️ 正在将代码推送到 GitHub...")
     try:
         os.chdir(HUGO_ROOT)
